@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>都市生存：罪恶模拟器 3D</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Arial', sans-serif; user-select: none; -webkit-user-select: none; }
+        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        
+        /* UI Layer */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        
+        /* HUD Top */
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+            color: white;
+            font-size: 14px;
+            pointer-events: auto;
+        }
+        .stat-box { display: flex; flex-direction: column; gap: 5px; }
+        .bar-container { width: 100px; height: 8px; background: #333; border: 1px solid #555; }
+        .bar-fill { height: 100%; transition: width 0.3s; }
+        #hp-bar { background: #ff3333; width: 100%; }
+        #rep-bar { background: #33cc33; width: 0%; }
+        #wanted-stars { color: gold; letter-spacing: 2px; font-size: 18px; text-shadow: 0 0 5px red; }
+        
+        /* Mobile Controls */
+        #joystick-zone { position: absolute; bottom: 50px; left: 50px; width: 120px; height: 120px; pointer-events: auto; }
+        
+        #action-buttons { position: absolute; bottom: 50px; right: 30px; display: flex; gap: 15px; pointer-events: auto; }
+        .btn {
+            width: 60px; height: 60px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid white;
+            color: white;
+            font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            backdrop-filter: blur(5px);
+            cursor: pointer;
+        }
+        .btn:active { background: rgba(255,255,255,0.5); transform: scale(0.95); }
+        #btn-enter { background: rgba(50, 150, 255, 0.5); display: none; }
+        #btn-attack { background: rgba(255, 50, 50, 0.5); }
+        
+        /* Phone/Menu */
+        #phone-btn {
+            position: absolute; top: 60px; right: 10px;
+            width: 50px; height: 80px;
+            background: #111; border: 2px solid #444; border-radius: 10px;
+            color: white; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; pointer-events: auto; font-size: 10px;
+        }
+        
+        /* Modals */
+        .modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 80%; max-width: 400px; max-height: 80%;
+            background: rgba(10, 10, 20, 0.95);
+            border: 1px solid #00ffcc;
+            border-radius: 10px;
+            padding: 20px;
+            color: #00ffcc;
+            display: none;
+            overflow-y: auto;
+            pointer-events: auto;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.2);
+        }
+        .modal h2 { margin-top: 0; border-bottom: 1px solid #00ffcc; padding-bottom: 10px; }
+        .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .menu-item {
+            background: rgba(255,255,255,0.1);
+            padding: 10px; text-align: center; border: 1px solid #333;
+            cursor: pointer;
+        }
+        .menu-item:hover { background: rgba(0, 255, 204, 0.2); }
+        
+        /* Notifications */
+        #notification-area {
+            position: absolute; top: 20%; left: 50%; transform: translateX(-50%);
+            text-align: center; width: 100%; pointer-events: none;
+        }
+        .notif {
+            background: rgba(0,0,0,0.7); color: white; padding: 5px 15px;
+            margin-bottom: 5px; border-radius: 5px; display: inline-block;
+            animation: fadeOut 3s forwards;
+        }
+        @keyframes fadeOut { 0% {opacity:1;} 80% {opacity:1;} 100% {opacity:0; display:none;} }
+
+        /* Start Screen */
+        #start-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; color: white; z-index: 999;
+            pointer-events: auto;
+        }
+        button.primary {
+            padding: 15px 40px; font-size: 20px; background: #00ffcc; border: none;
+            color: black; font-weight: bold; cursor: pointer; margin-top: 20px;
+        }
+    </style>
+    <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+</head>
+<body>
+
+<div id="game-container"></div>
+
+<div id="ui-layer">
+    <!-- HUD -->
+    <div class="hud-top">
+        <div class="stat-box">
+            <div id="time-display">Day 1 - 08:00</div>
+            <div id="money-display">$100</div>
+            <div style="color: cyan;" id="job-display">无业游民</div>
+        </div>
+        <div class="stat-box" style="align-items: flex-end;">
+            <div id="wanted-stars">☆☆☆☆☆</div>
+            <div class="bar-container"><div id="hp-bar" class="bar-fill"></div></div>
+            <div style="font-size:10px;">生命值</div>
+            <div class="bar-container"><div id="rep-bar" class="bar-fill"></div></div>
+            <div style="font-size:10px;">声望</div>
+        </div>
+    </div>
+
+    <!-- Phone Button -->
+    <div id="phone-btn" onclick="toggleMenu()">手机<br>菜单</div>
+
+    <!-- Controls -->
+    <div id="joystick-zone"></div>
+    <div id="action-buttons">
+        <div id="btn-enter" class="btn" onclick="interaction()">上车</div>
+        <div id="btn-attack" class="btn" onclick="attack()">攻击</div>
+    </div>
+    
+    <!-- Notifications -->
+    <div id="notification-area"></div>
+</div>
+
+<!-- Menus -->
+<div id="main-menu" class="modal">
+    <h2>智能手机 OS 2.0</h2>
+    <div class="menu-grid">
+        <div class="menu-item" onclick="showSubMenu('jobs')">💼 找工作</div>
+        <div class="menu-item" onclick="showSubMenu('shop')">🛒 黑市/商店</div>
+        <div class="menu-item" onclick="showSubMenu('social')">🍷 社交/夜店</div>
+        <div class="menu-item" onclick="showSubMenu('skills')">⚡ 技能树</div>
+        <div class="menu-item" onclick="showSubMenu('status')">📊 状态/背包</div>
+        <div class="menu-item" onclick="closeMenu()">❌ 关闭</div>
+    </div>
+</div>
+
+<div id="jobs-menu" class="modal">
+    <h2>职业中心</h2>
+    <div id="job-list"></div>
+    <button onclick="showSubMenu('main')" style="margin-top:10px;">返回</button>
+</div>
+
+<div id="shop-menu" class="modal">
+    <h2>黑市 & 便利店</h2>
+    <div id="shop-list"></div>
+    <button onclick="showSubMenu('main')" style="margin-top:10px;">返回</button>
+</div>
+
+<!-- Start Screen -->
+<div id="start-screen">
+    <h1 style="color:#00ffcc; text-shadow: 0 0 10px cyan;">自由都市 3D</h1>
+    <p>目标：存活30天 | 赚取$10000 | 策划银行劫案</p>
+    <p>提示：左侧摇杆移动，靠近车辆可抢夺</p>
+    <button class="primary" onclick="startGame()">开始游戏</button>
+</div>
+
+<script>
+/**
+ * GAME ENGINE & LOGIC
+ */
+
+// --- 1. Constants & Config ---
+const SCENE_SIZE = 400;
+const DAY_DURATION_REAL_MIN = 24; // 24 minutes real time = 24 hours game time
+const GAME_SPEED = 1; // 1 = Standard
+const COLORS = {
+    ground: 0x222222,
+    building: [0x334455, 0x223344, 0x556677, 0x111122],
+    player: 0x00ffcc,
+    car: [0xff0000, 0x0000ff, 0xffffff, 0x000000, 0xffff00],
+    police: 0x000055
+};
+
+// --- 2. Game State ---
+const state = {
+    day: 1,
+    time: 8 * 60, // Minutes from midnight
+    money: 100,
+    hp: 100,
+    maxHp: 100,
+    reputation: 0,
+    wanted: 0,
+    job: null,
+    inventory: [],
+    inVehicle: false,
+    currentVehicle: null,
+    isGameOver: false,
+    lastWageTime: 0,
+    skills: { driving: 1, combat: 1, negotiation: 1 }
+};
+
+// --- 3. Three.js Setup ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB); // Day Sky
+scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.getElementById('game-container').appendChild(renderer.domElement);
+
+// Lights
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+sunLight.position.set(50, 100, 50);
+sunLight.castShadow = true;
+sunLight.shadow.camera.left = -50;
+sunLight.shadow.camera.right = 50;
+sunLight.shadow.camera.top = 50;
+sunLight.shadow.camera.bottom = -50;
+scene.add(sunLight);
+
+// Ground
+const groundGeo = new THREE.PlaneGeometry(SCENE_SIZE, SCENE_SIZE);
+const groundMat = new THREE.MeshPhongMaterial({ color: COLORS.ground });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// --- 4. Entities ---
+const buildings = [];
+const cars = [];
+const npcs = [];
+
+// Player
+const playerGeo = new THREE.BoxGeometry(1, 2, 1);
+const playerMat = new THREE.MeshPhongMaterial({ color: COLORS.player });
+const player = new THREE.Mesh(playerGeo, playerMat);
+player.position.set(0, 1, 0);
+player.castShadow = true;
+scene.add(player);
+
+// City Generation
+function createCity() {
+    // Simple grid city
+    const blockSize = 20;
+    const streetWidth = 10;
+    
+    for(let x = -SCENE_SIZE/2; x < SCENE_SIZE/2; x += blockSize + streetWidth) {
+        for(let z = -SCENE_SIZE/2; z < SCENE_SIZE/2; z += blockSize + streetWidth) {
+            // Random building height
+            const height = Math.random() * 20 + 5;
+            const geo = new THREE.BoxGeometry(blockSize - 2, height, blockSize - 2);
+            const color = COLORS.building[Math.floor(Math.random() * COLORS.building.length)];
+            const mat = new THREE.MeshPhongMaterial({ color: color });
+            const b = new THREE.Mesh(geo, mat);
+            b.position.set(x + blockSize/2, height/2, z + blockSize/2);
+            b.castShadow = true;
+            b.receiveShadow = true;
+            scene.add(b);
+            
+            // Add bounding box for simple collision
+            b.userData = { type: 'building', bounds: new THREE.Box3().setFromObject(b) };
+            buildings.push(b);
+
+            // Add some neon lights for visual flair
+            if (Math.random() > 0.7) {
+                const light = new THREE.PointLight(0xff00cc, 1, 15);
+                light.position.set(x, 2, z);
+                scene.add(light);
+            }
+        }
+    }
+}
+
+function spawnCar() {
+    if (cars.length > 15) return; // Limit car count
+    const geo = new THREE.BoxGeometry(2, 1.2, 4);
+    const color = COLORS.car[Math.floor(Math.random() * COLORS.car.length)];
+    const mat = new THREE.MeshPhongMaterial({ color: color });
+    const car = new THREE.Mesh(geo, mat);
+    
+    // Random spawn on streets
+    const range = SCENE_SIZE / 2 - 10;
+    car.position.set((Math.random() - 0.5) * range * 2, 0.6, (Math.random() - 0.5) * range * 2);
+    
+    car.castShadow = true;
+    car.userData = { 
+        type: 'car', 
+        health: 100, 
+        speed: 0, 
+        dir: new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize(),
+        color: color
+    };
+    
+    scene.add(car);
+    cars.push(car);
+}
+
+// --- 5. Inputs ---
+const joystick = nipplejs.create({
+    zone: document.getElementById('joystick-zone'),
+    mode: 'static',
+    position: { left: '50%', top: '50%' },
+    color: 'white'
+});
+
+let moveVector = { x: 0, y: 0 };
+joystick.on('move', (evt, data) => {
+    if(data.vector) {
+        moveVector.x = data.vector.x;
+        moveVector.y = data.vector.y;
+    }
+});
+joystick.on('end', () => {
+    moveVector = { x: 0, y: 0 };
+});
+
+// Key inputs for PC testing
+const keys = {};
+window.addEventListener('keydown', (e) => keys[e.code] = true);
+window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+// --- 6. Game Loop & Systems ---
+
+// Time System
+function updateTime(dt) {
+    // Real minute = game hour
+    // 24 real mins = 24 game hours
+    // 1 real sec = 1 game minute
+    state.time += dt; 
+    if (state.time >= 24 * 60) {
+        state.time = 0;
+        state.day++;
+        payDailyWage();
+        notify(`第 ${state.day} 天开始了`);
+    }
+    
+    // Day/Night Cycle Visuals
+    const hours = state.time / 60;
+    const isNight = hours < 6 || hours > 20;
+    const bgColor = isNight ? 0x111111 : 0x87CEEB;
+    scene.background.setHex(bgColor);
+    scene.fog.color.setHex(bgColor);
+    
+    // Sun movement
+    const angle = (hours / 24) * Math.PI * 2;
+    sunLight.position.x = Math.sin(angle) * 100;
+    sunLight.position.y = Math.cos(angle) * 100;
+    sunLight.intensity = isNight ? 0 : 1;
+    
+    // Update UI
+    const hh = Math.floor(hours).toString().padStart(2, '0');
+    const mm = Math.floor(state.time % 60).toString().padStart(2, '0');
+    document.getElementById('time-display').innerText = `Day ${state.day} - ${hh}:${mm}`;
+    
+    // End condition
+    if (state.day > 30) gameOver(true);
+}
+
+function payDailyWage() {
+    let wage = 0;
+    if (state.job === 'courier') wage = 50;
+    if (state.job === 'smuggler') wage = 200;
+    if (state.job === 'banker') wage = 500;
+    
+    if (wage > 0) {
+        addMoney(wage);
+        notify(`获得今日工资: $${wage}`);
+    }
+}
+
+// Movement & Physics
+function updatePlayer(dt) {
+    if (state.isGameOver) return;
+
+    // Combine joystick and keyboard
+    let mx = moveVector.x;
+    let mz = -moveVector.y; // NippleJS y is inverted for 3D Z
+    
+    if (keys['ArrowUp'] || keys['KeyW']) mz = -1;
+    if (keys['ArrowDown'] || keys['KeyS']) mz = 1;
+    if (keys['ArrowLeft'] || keys['KeyA']) mx = -1;
+    if (keys['ArrowRight'] || keys['KeyD']) mx = 1;
+
+    const speed = state.inVehicle ? 0.4 : 0.15; // Car is faster
+    
+    if (mx !== 0 || mz !== 0) {
+        const moveDir = new THREE.Vector3(mx, 0, mz).normalize();
+        
+        // Simple collision check
+        const nextPos = player.position.clone().add(moveDir.multiplyScalar(speed));
+        let collided = false;
+        
+        // Check building collision (very basic box check)
+        const pBox = new THREE.Box3().setFromObject(player); // current approximation
+        // Ideally use raycasting or projected box, simplified here:
+        
+        if (nextPos.x > SCENE_SIZE/2 || nextPos.x < -SCENE_SIZE/2 || nextPos.z > SCENE_SIZE/2 || nextPos.z < -SCENE_SIZE/2) {
+            collided = true;
+        }
+
+        if (!collided) {
+            player.position.copy(nextPos);
+            player.lookAt(player.position.clone().add(new THREE.Vector3(mx, 0, mz)));
+        }
+    }
+    
+    // Camera Follow
+    const offset = state.inVehicle ? new THREE.Vector3(0, 15, 15) : new THREE.Vector3(0, 10, 10);
+    const targetPos = player.position.clone().add(offset);
+    camera.position.lerp(targetPos, 0.1);
+    camera.lookAt(player.position);
+
+    // Check for nearby interactables
+    checkInteractions();
+}
+
+function updateCars() {
+    cars.forEach((car, index) => {
+        if (car === state.currentVehicle) return; // Player controlled
+
+        // Simple AI: move forward, turn if wall
+        car.position.add(car.userData.dir.clone().multiplyScalar(0.1));
+        car.rotation.y = Math.atan2(car.userData.dir.x, car.userData.dir.z);
+
+        // Bounce off bounds
+        if (Math.abs(car.position.x) > SCENE_SIZE/2) car.userData.dir.x *= -1;
+        if (Math.abs(car.position.z) > SCENE_SIZE/2) car.userData.dir.z *= -1;
+        
+        // Check collision with player
+        if (!state.inVehicle && car.position.distanceTo(player.position) < 2) {
+            takeDamage(20);
+            notify("被车撞了！");
+            // Knockback
+            player.position.add(car.userData.dir.clone().multiplyScalar(3));
+        }
+    });
+    
+    // Spawn more cars if needed
+    if (Math.random() < 0.01) spawnCar();
+}
+
+// Interaction System
+let nearestCar = null;
+function checkInteractions() {
+    nearestCar = null;
+    let minDist = 5;
+    
+    if (!state.inVehicle) {
+        cars.forEach(car => {
+            const dist = player.position.distanceTo(car.position);
+            if (dist < minDist) {
+                nearestCar = car;
+                minDist = dist;
+            }
+        });
+        
+        const btn = document.getElementById('btn-enter');
+        if (nearestCar) {
+            btn.style.display = 'flex';
+            btn.innerText = '抢车';
+        } else {
+            btn.style.display = 'none';
+        }
+    } else {
+        const btn = document.getElementById('btn-enter');
+        btn.style.display = 'flex';
+        btn.innerText = '下车';
+    }
+}
+
+function interaction() {
+    if (state.inVehicle) {
+        // Exit
+        state.inVehicle = false;
+        player.visible = true;
+        state.currentVehicle = null;
+        // Place player next to car
+        player.position.x += 2;
+    } else if (nearestCar) {
+        // Enter / Carjack
+        state.inVehicle = true;
+        state.currentVehicle = nearestCar;
+        player.visible = false; // Hide player mesh
+        // Teleport player logic to follow car handled in update loop:
+        // We just set player pos to car pos continuously
+        increaseWanted(10);
+        notify("抢夺车辆！通缉等级上升！");
+    }
+}
+
+// Combat & Crime
+function attack() {
+    if (state.inVehicle) {
+        notify("不能在车里攻击 (暂未实装)");
+        return;
+    }
+    
+    // Simple area attack
+    let hit = false;
+    cars.forEach((car, i) => {
+        if (player.position.distanceTo(car.position) < 4) {
+            car.userData.health -= 25;
+            car.material.color.setHex(0xffaaaa); // Flash red
+            hit = true;
+            
+            if (car.userData.health <= 0) {
+                // Explode
+                scene.remove(car);
+                cars.splice(i, 1);
+                notify("车辆炸毁！");
+                increaseWanted(20);
+                // Explosion particle (simple)
+                const exp = new THREE.Mesh(
+                    new THREE.SphereGeometry(2),
+                    new THREE.MeshBasicMaterial({color: 0xff5500})
+                );
+                exp.position.copy(car.position);
+                scene.add(exp);
+                setTimeout(()=>scene.remove(exp), 500);
+            }
+        }
+    });
+    
+    if (!hit) {
+        // Animation placeholder
+        player.rotation.y += 0.5;
+        setTimeout(()=>player.rotation.y -= 0.5, 100);
+    } else {
+        increaseWanted(5);
+    }
+}
+
+function increaseWanted(amount) {
+    state.wanted += amount;
+    if (state.wanted > 100) state.wanted = 100;
+    updateHUD();
+    
+    if (state.wanted > 50 && Math.random() > 0.9) {
+        spawnPolice();
+    }
+}
+
+function spawnPolice() {
+    if (cars.length > 20) return;
+    const geo = new THREE.BoxGeometry(2, 1.2, 4);
+    const mat = new THREE.MeshPhongMaterial({ color: COLORS.police });
+    const policeCar = new THREE.Mesh(geo, mat);
+    
+    // Spawn near player
+    const offset = new THREE.Vector3(Math.random()-0.5, 0, Math.random()-0.5).normalize().multiplyScalar(30);
+    policeCar.position.copy(player.position).add(offset);
+    
+    policeCar.userData = { 
+        type: 'police', 
+        health: 200, 
+        dir: new THREE.Vector3().subVectors(player.position, policeCar.position).normalize()
+    };
+    
+    scene.add(policeCar);
+    cars.push(policeCar);
+    notify("特警出动！", "red");
+}
+
+// UI & State Management
+function addMoney(amount) {
+    state.money += amount;
+    updateHUD();
+    if (state.money >= 10000) checkWin();
+}
+
+function takeDamage(amount) {
+    state.hp -= amount;
+    if (state.hp <= 0) {
+        state.hp = 0;
+        gameOver(false);
+    }
+    updateHUD();
+}
+
+function updateHUD() {
+    document.getElementById('money-display').innerText = `$${state.money}`;
+    document.getElementById('hp-bar').style.width = `${(state.hp/state.maxHp)*100}%`;
+    document.getElementById('rep-bar').style.width = `${state.reputation}%`;
+    
+    let stars = "";
+    const level = Math.floor(state.wanted / 20);
+    for(let i=0; i<5; i++) stars += (i < level ? "★" : "☆");
+    document.getElementById('wanted-stars').innerText = stars;
+}
+
+function notify(msg, color="white") {
+    const el = document.createElement('div');
+    el.className = 'notif';
+    el.style.color = color;
+    el.innerText = msg;
+    document.getElementById('notification-area').appendChild(el);
+}
+
+// Menus
+function toggleMenu() {
+    const menu = document.getElementById('main-menu');
+    menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+}
+
+function closeMenu() {
+    document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
+}
+
+function showSubMenu(id) {
+    closeMenu();
+    if (id === 'main') {
+        document.getElementById('main-menu').style.display = 'block';
+        return;
+    }
+    
+    const el = document.getElementById(id + '-menu');
+    if(el) el.style.display = 'block';
+    
+    // Populate dynamic lists
+    if (id === 'jobs') renderJobs();
+    if (id === 'shop') renderShop();
+    if (id === 'status') {
+        notify(`背包物品: ${state.inventory.join(', ') || '空'}`);
+        setTimeout(() => showSubMenu('main'), 1000);
+    }
+    if (id === 'skills' || id === 'social') {
+        notify("该功能需声望等级 2 解锁");
+        setTimeout(() => showSubMenu('main'), 1000);
+    }
+}
+
+// Content Logic
+const jobsData = [
+    { id: 'courier', name: '快递员', reqRep: 0, wage: 50, risk: '低' },
+    { id: 'smuggler', name: '走私犯', reqRep: 20, wage: 200, risk: '高' },
+    { id: 'banker', name: '银行大盗 (策划)', reqRep: 90, wage: 0, risk: '极高' }
+];
+
+function renderJobs() {
+    const list = document.getElementById('job-list');
+    list.innerHTML = '';
+    jobsData.forEach(job => {
+        const div = document.createElement('div');
+        div.className = 'menu-item';
+        div.innerHTML = `<b>${job.name}</b><br>需声望: ${job.reqRep} | 风险: ${job.risk}`;
+        div.onclick = () => setJob(job);
+        list.appendChild(div);
+    });
+}
+
+function setJob(job) {
+    if (state.reputation < job.reqRep) {
+        notify("声望不足！");
+        return;
+    }
+    if (job.id === 'banker') {
+        if (state.money >= 5000 && state.inventory.includes('Drill')) {
+            notify("银行劫案开始！坚持住！");
+            increaseWanted(100);
+            addMoney(50000); // Instant win if survived
+            // In a full game, this would trigger a mini-game scene
+        } else {
+            notify("缺少条件：资金$5000 或 钻机");
+        }
+        return;
+    }
+    
+    state.job = job.id;
+    document.getElementById('job-display').innerText = job.name;
+    notify(`入职：${job.name}`);
+    closeMenu();
+}
+
+function renderShop() {
+    const list = document.getElementById('shop-list');
+    list.innerHTML = '';
+    const items = [
+        { name: '急救包', cost: 50, effect: () => { state.hp = 100; notify("生命已恢复"); } },
+        { name: '警用扫描仪', cost: 500, effect: () => { state.wanted = 0; notify("通缉已消除"); } },
+        { name: '声望卡', cost: 1000, effect: () => { state.reputation += 10; notify("声望 +10"); } },
+        { name: '钻机', cost: 2000, effect: () => { state.inventory.push('Drill'); notify("获得钻机"); } }
+    ];
+    
+    items.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'menu-item';
+        div.innerHTML = `<b>${item.name}</b> ($${item.cost})`;
+        div.onclick = () => {
+            if (state.money >= item.cost) {
+                state.money -= item.cost;
+                item.effect();
+                updateHUD();
+            } else {
+                notify("资金不足");
+            }
+        };
+        list.appendChild(div);
+    });
+}
+
+// End Game
+function gameOver(win) {
+    state.isGameOver = true;
+    const screen = document.getElementById('start-screen');
+    screen.style.display = 'flex';
+    screen.querySelector('h1').innerText = win ? "任务完成！" : "你被捕了/死亡";
+    screen.querySelector('p').innerText = win ? "你是这座城市的传奇！" : "没钱，没命，没自由。";
+    screen.querySelector('button').innerText = "重新开始";
+}
+
+function checkWin() {
+    if (state.money >= 10000 && state.day >= 30) {
+        gameOver(true);
+    }
+}
+
+function startGame() {
+    document.getElementById('start-screen').style.display = 'none';
+    // Reset stats
+    state.day = 1; state.money = 100; state.hp = 100; state.wanted = 0; state.isGameOver = false;
+    state.time = 8 * 60;
+    player.position.set(0,1,0);
+    updateHUD();
+}
+
+// --- 7. Main Loop ---
+let lastTime = 0;
+function animate(time) {
+    requestAnimationFrame(animate);
+    const dt = (time - lastTime) / 1000; // delta time in seconds
+    lastTime = time;
+    
+    if (!state.isGameOver) {
+        // Logic updates scaled by real time seconds = game minutes
+        updateTime(1); // 1 game minute per frame roughly, adjusted logic above uses simpler counter
+        
+        updatePlayer(dt);
+        updateCars();
+        
+        if (state.inVehicle && state.currentVehicle) {
+            // Sync player pos to car
+            player.position.copy(state.currentVehicle.position);
+        }
+        
+        // Police Chase Logic
+        if (state.wanted > 0) {
+            // Decay wanted level slowly if hiding (not implemented complex hiding yet)
+            // Simple mechanic: Wanted level drops very slowly if not committing crimes
+            if (Math.random() > 0.995) state.wanted -= 0.1;
+            if (state.wanted < 0) state.wanted = 0;
+            updateHUD();
+        }
+    }
+    
+    renderer.render(scene, camera);
+}
+
+// Init
+createCity();
+for(let i=0; i<10; i++) spawnCar();
+animate(0);
+
+// Resize
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+</script>
+</body>
+</html>
